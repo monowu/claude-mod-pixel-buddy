@@ -1,0 +1,1 @@
+{ "name": "pixel-buddy", "version": "0.2.0", "description": "像素風陪伴娃娃：側邊 pane 聊天，問與主 session 無關的小問題", "types": "./types/index.d.ts" }
