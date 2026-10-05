@@ -1,13 +1,13 @@
-# claude-mod-pixel-buddy
+# claude-mod-sidebot（嗶嗶）
 
-一個 Claude Code mod：像素風機器人陪伴娃娃，同時是你的 **sidecar 旁路小助手**。在側邊開一個聊天小窗，問名詞解釋、概念、剛剛那個錯誤是什麼意思之類，不想在主 session 問的事。它看得到主 session 的內容，但不會動它、也不會干擾它。支援桌面版（Code 分頁）與終端機。
+一個 Claude Code mod：**嗶嗶（Sidebot）**，住在側邊的像素機器人，也是你的 **sidecar 旁路小助手**。在側邊開一個聊天小窗，問名詞解釋、概念、剛剛那個錯誤是什麼意思之類，不想在主 session 問的事。它看得到主 session 的內容，但不會動它、也不會干擾它。支援桌面版（Code 分頁）與終端機。
 
-![pixel-buddy 截圖](docs/screenshot.png)
+![嗶嗶 截圖](docs/screenshot.png)
 
 ## 使用說明
 
 1. **安裝**（見下方），開新 session。
-2. 輸入 `/buddy` 叫出小窗。輸入框會自動取得焦點。
+2. 新 session 一開始小窗就會自動開在側邊（不搶輸入焦點；視窗太窄時會等到夠寬才顯示）。關掉後輸入 `/buddy` 叫回來，輸入框會自動取得焦點。
 3. 打字，按 Enter 送出。送出後輸入框自動清空，機器人開始「敲鍵盤」回答。
 4. 回覆下方的 `[複製]` 可以複製整則回覆。
 5. `[收起]` 關閉小窗（對話會保留，再 `/buddy` 就回來）；`[清空對話]` 清掉這個 session 的對話。
@@ -35,7 +35,7 @@
 ## 安裝
 
 ```bash
-git clone https://github.com/monowu/claude-mod-pixel-buddy.git
+git clone https://github.com/monowu/claude-mod-sidebot.git
 ```
 
 把資料夾加進 `~/.claude/settings.json` 的 `CLAUDE_CODE_PLUGIN_DIRS`（多個路徑用冒號分隔）：
@@ -43,12 +43,12 @@ git clone https://github.com/monowu/claude-mod-pixel-buddy.git
 ```json
 {
   "env": {
-    "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/claude-mod-pixel-buddy"
+    "CLAUDE_CODE_PLUGIN_DIRS": "/path/to/claude-mod-sidebot"
   }
 }
 ```
 
-環境變數只在 session 啟動時讀取，所以要**開新 session** 才會生效。也可以單次載入：`claude --plugin-dir /path/to/claude-mod-pixel-buddy`。
+環境變數只在 session 啟動時讀取，所以要**開新 session** 才會生效。也可以單次載入：`claude --plugin-dir /path/to/claude-mod-sidebot`。
 
 ## 注意事項
 

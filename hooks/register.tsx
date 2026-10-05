@@ -3,11 +3,11 @@ import type { Register } from 'claude-code'
 
 import type { Msg } from '../types'
 
-const PANE = 'pixel-buddy'
-const isBusy = atom({ plugin: 'pixel-buddy', key: 'isBusy' } as const, false)
-const chat = atom({ plugin: 'pixel-buddy', key: 'chat' } as const, [])
-const round = atom({ plugin: 'pixel-buddy', key: 'round' } as const, 0)
-const typingUntil = atom({ plugin: 'pixel-buddy', key: 'typingUntil' } as const, 0)
+const PANE = 'sidebot'
+const isBusy = atom({ plugin: 'sidebot', key: 'isBusy' } as const, false)
+const chat = atom({ plugin: 'sidebot', key: 'chat' } as const, [])
+const round = atom({ plugin: 'sidebot', key: 'round' } as const, 0)
+const typingUntil = atom({ plugin: 'sidebot', key: 'typingUntil' } as const, 0)
 
 const PERSONA =
   '你是住在旁邊小窗的像素小機器人，語氣精準有條理、親切，偶爾冒出「嗶」。' +
@@ -29,17 +29,18 @@ export const register: Register = on => {
   let frame = 0
   
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'buddy', description: '叫出像素陪伴娃娃（側聊小窗）' })
+    await $.command.register({ name: 'buddy', description: '叫出嗶嗶（Sidebot）旁路小助手小窗' })
     $.clock.every(400, () => {
       frame += 1
       $.ui.invalidate('ui.render')
     })
-    $.ui.toast('像素娃娃已載入，輸入 /buddy 叫出她')
+    // 新 session 一開始就把小窗開出來（不搶輸入焦點）；視窗太窄時會等到夠寬才顯示，/buddy 隨時可叫出
+    void $.ui.open({ id: PANE, title: '嗶嗶' })
     return next(e)
   })
 
   on('command.run', { command: 'buddy' }, async $ => {
-    await $.ui.open({ id: PANE, title: '像素娃娃', focus: true })
+    await $.ui.open({ id: PANE, title: '嗶嗶', focus: true })
     return { text: '娃娃出來囉。' }
   })
 

@@ -1,1 +1,6 @@
-{ "name": "pixel-buddy", "version": "0.2.0", "description": "像素風陪伴娃娃：側邊 pane 聊天，問與主 session 無關的小問題", "types": "./types/index.d.ts" }
+{
+  "name": "sidebot",
+  "version": "0.2.0",
+  "description": "嗶嗶（Sidebot）：像素機器人旁路小助手，在側邊小窗回答問題，看得到主 session 的內容但不干擾它",
+  "types": "./types/index.d.ts"
+}
