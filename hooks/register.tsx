@@ -1,42 +1,39 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Kind, Msg } from '../types'
+import type { Msg } from '../types'
 
 const PANE = 'pixel-buddy'
 const isBusy = atom({ plugin: 'pixel-buddy', key: 'isBusy' } as const, false)
 const chat = atom({ plugin: 'pixel-buddy', key: 'chat' } as const, [])
-const kindAtom = atom({ plugin: 'pixel-buddy', key: 'kind' } as const, 'claude')
 const round = atom({ plugin: 'pixel-buddy', key: 'round' } as const, 0)
+const typingUntil = atom({ plugin: 'pixel-buddy', key: 'typingUntil' } as const, 0)
 
-const PERSONA: Record<Kind, string> = {
-  claude: '你是一隻橘色的像素小螃蟹吉祥物，愛敲鍵盤，語氣開朗熱心，像個靠譜的小夥伴。',
-  slime: '你是一隻圓滾滾、軟綿綿的史萊姆，語氣溫柔可愛。',
-  robot: '你是一隻小機器人，語氣精準有條理，偶爾冒出「嗶」。',
-  ghost: '你是一隻友善的小幽靈，語氣輕飄飄、俏皮，偶爾「呼～」。',
-}
-const SYSTEM =
-  '你是使用者的像素風陪伴娃娃，住在視窗旁邊。' +
-  '你與使用者的主要工作 session 完全獨立，看不到那邊的內容。' +
-  '使用者會問你名詞解釋、概念、小問題，或不想打斷主 session 的事。' +
-  '用繁體中文回答，簡短親切（通常 5 行內），必要時才用程式碼區塊。'
+const PERSONA =
+  '你是住在旁邊小窗的像素小機器人，語氣精準有條理、親切，偶爾冒出「嗶」。' +
+  '你是使用者主要工作 session 的旁路小助手（sidecar）：你看得到主 session 目前的內容，' +
+  '但只負責回答問題，不要執行任何動作、不要呼叫工具，也不要假裝主 session 做了什麼。' +
+  '使用者會問名詞解釋、概念，或不想打斷主 session 的小問題。' +
+  '用繁體中文回答，簡短（通常 5 行內），必要時才用程式碼區塊。'
 
 const DARK = '#1d2433'
+const KEY = '#8493aa'
+const SPAN = 12 // 娃娃所在區域的寬度（置中用）
+const TYPING_MS = 1500 // 最後一次按鍵後，多久內還算「正在打字」
+
+
+type Gaze = 'left' | 'center' | 'right'
+const EYE_AT: Record<Gaze, number[]> = { left: [0, 3], center: [1, 4], right: [2, 5] }
 
 export const register: Register = on => {
   let frame = 0
-  let stop = new AbortController()
-
+  
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'buddy', description: '叫出像素陪伴娃娃（側聊小窗）' })
     $.clock.every(400, () => {
       frame += 1
       $.ui.invalidate('ui.render')
     })
-    const saved = await $.store.get('kind')
-    if (saved === 'claude' || saved === 'slime' || saved === 'robot' || saved === 'ghost') {
-      await update($, kindAtom, () => saved)
-    }
     $.ui.toast('像素娃娃已載入，輸入 /buddy 叫出她')
     return next(e)
   })
@@ -50,155 +47,120 @@ export const register: Register = on => {
     const { Box, Text, Input, Button } = $.ui.resolve(e)
     const busy = await read($, isBusy)
     const msgs = await read($, chat)
-    const kind = await read($, kindAtom)
     const n = await read($, round)
+    const until = await read($, typingUntil)
+    const now = await $.clock.now()
 
-    const blink = frame % 9 === 0
-    const eye = busy || blink ? '–' : '●'
-    const bounce = frame % 2 === 0
+    // 三種狀態：敲鍵盤（娃娃正在回答）、思考（使用者正在打字，娃娃在旁邊等）、閒晃
+    const mode = busy ? 'type' : now < until ? 'think' : 'idle'
+    const odd = frame % 2 === 1
+    const blink = frame % 11 === 0
+
+    // 閒晃：原地左右看（中、左、中、右，每 1.6 秒換一次）
+    const pos = SPAN / 2
+    const gaze: Gaze = mode === 'idle' ? (['center', 'left', 'center', 'right'] as const)[Math.floor(frame / 4) % 4] : 'center'
+
+    // 眼睛字元：思考時往上看、打字時往下看
+    const glyph = mode === 'think' ? '▀' : mode === 'type' ? '▄' : blink ? '▁' : '▪'
+    const bubble = mode === 'think' ? ['·', '··', '···'][frame % 3] : ''
 
     const send = async (text: string) => {
       const q = text.trim()
       if (!q || (await read($, isBusy))) return
       // 換一個 key 讓輸入框重建，送出後即清空
       await update($, round, (v: number) => v + 1)
+      await update($, typingUntil, () => 0)
       const before = await read($, chat)
-      await update($, chat, (l: Msg[]) => [...l, { role: 'user', text: q } as Msg].slice(-40))
+      await update($, chat, (l: Msg[]) => [...l, { role: 'user', text: q } as Msg].slice(-100))
       await update($, isBusy, () => true)
-      stop = new AbortController()
-      const who = await read($, kindAtom)
       const history = before
-        .slice(-10)
-        .map(m => `${m.role === 'user' ? '使用者' : '娃娃'}：${m.text}`)
+        .slice(-20)
+        .map(m => `${m.role === 'user' ? '使用者' : '小機器人'}：${m.text}`)
         .join('\n')
-      const r = await $.model.complete(
-        {
+      // 旁路：複製主 session 目前的對話當背景（唯讀、不寫回主 session），
+      // 再附上小窗自己的對話。小窗的問答不會出現在主 session。
+      const prompt =
+        `【旁路小窗】${PERSONA}\n` +
+        '以下是你和使用者在小窗裡的對話紀錄，請只回答最後一個問題。\n' +
+        `${history ? history + '\n' : ''}使用者：${q}\n小機器人：`
+      let r = await $.model.fork({ prompt })
+      let note = ''
+      if (!r.isAnswered && r.reason === 'nothing-to-fork') {
+        // 主 session 還沒有任何回覆（或剛 /clear）：改用沒有背景的一般回答
+        note = '（主 session 還沒有內容，這次沒有背景）\n'
+        r = await $.model.complete({
           model: 'haiku',
-          system: `${SYSTEM}${PERSONA[who]}`,
-          prompt: `${history ? history + '\n' : ''}使用者：${q}\n娃娃：`,
+          system: PERSONA,
+          prompt,
           maxTokens: 700,
           timeoutMs: 60000,
-        },
-        { signal: stop.signal },
-      )
-      const reply = r.isAnswered ? r.text.trim() : `(出錯了：${r.reason})`
-      await update($, chat, (l: Msg[]) => [...l, { role: 'buddy', text: reply } as Msg].slice(-40))
+        })
+      }
+      const reply = r.isAnswered ? note + r.text.trim() : `(出錯了：${r.reason})`
+      await update($, chat, (l: Msg[]) => [...l, { role: 'buddy', text: reply } as Msg].slice(-100))
       await update($, isBusy, () => false)
     }
 
-    const G = '#7ddc8a'
-    const Gs = '#4fb868'
     const S = '#b8c4d6'
     const Ss = '#8493aa'
-    const W = '#b9a8f5'
-    const Ws = '#8f7fd0'
 
-    const slime = (
-      <Box flexDirection="column" alignItems="center">
-        <Text color={G}>{'   ▄▄▄▄▄▄   '}</Text>
-        <Text color={G}>{' ▟████████▙ '}</Text>
-        <Text color={G}>
-          {'▐██'}
-          <Text color={DARK} backgroundColor={G}>{` ${eye}  ${eye} `}</Text>
-          {'██▌'}
+    // 機器人（寬 10、高 3）
+    const antenna = mode === 'think' ? (odd ? '#ef4444' : '#fecaca') : odd ? '#ef4444' : '#fca5a5'
+    const screen = [0, 1, 2, 3, 4, 5].map(i => {
+      const isEye = EYE_AT[gaze].includes(i)
+      const g = mode === 'idle' && !isEye ? ' ' : isEye ? (glyph === '▪' ? '■' : glyph) : ' '
+      return (
+        <Text key={`s${i}`} color={odd && mode !== 'idle' ? '#5eead4' : '#22d3ee'} backgroundColor={DARK}>
+          {g}
         </Text>
-        <Text color={G}>
-          {'▐███'}
-          <Text color={DARK} backgroundColor={G}>{busy ? ' ﹏ ' : ' ‿‿ '}</Text>
-          {'███▌'}
-        </Text>
-        <Text color={Gs}>{bounce ? '▝▀▀▀▀▀▀▀▀▀▀▘' : ' ▀▀▀▀▀▀▀▀▀▀ '}</Text>
-      </Box>
-    )
+      )
+    })
+    const robotFeet =
+      ' ▀▙▄▄▄▄▟▀ '
     const robot = (
-      <Box flexDirection="column" alignItems="center">
-        <Text color="#ef4444">{bounce ? '     ●      ' : '     ○      '}</Text>
-        <Text color={S}>{'     ▐▌     '}</Text>
-        <Text color={S}>{' ▟████████▙ '}</Text>
+      <Box flexDirection="column">
         <Text color={S}>
-          {'▐█'}
-          <Text color={bounce ? '#5eead4' : '#22d3ee'} backgroundColor={DARK}>{busy ? ' ▬    ▬ ' : ' ■    ■ '}</Text>
-          {'█▌'}
+          {'  ▟██'}
+          <Text color={antenna}>●</Text>
+          {'█▙  '}
         </Text>
         <Text color={S}>
           {'▐█'}
-          <Text color="#22d3ee" backgroundColor={DARK}>{busy ? '  ░░░░  ' : '  ▬▬▬▬  '}</Text>
+          {screen}
           {'█▌'}
         </Text>
-        <Text color={Ss}>{' ▀▀▙▄▄▄▄▟▀▀ '}</Text>
-      </Box>
-    )
-    const ghost = (
-      <Box flexDirection="column" alignItems="center">
-        <Text color={W}>{'  ▄██████▄  '}</Text>
-        <Text color={W}>{' ▟████████▙ '}</Text>
-        <Text color={W}>
-          {'▐██'}
-          <Text color={DARK} backgroundColor={W}>{` ${eye}  ${eye} `}</Text>
-          {'██▌'}
-        </Text>
-        <Text color={W}>
-          {'▐███'}
-          <Text color="#ff9db8" backgroundColor={W}>{busy ? ' ◦  ' : ' ○  '}</Text>
-          {'███▌'}
-        </Text>
-        <Text color={Ws}>{bounce ? '▝▀▙▀▙▀▙▀▙▀▘▘' : ' ▀▜▀▜▀▜▀▜▀▀ '}</Text>
-      </Box>
-    )
-    const O = '#d97757'
-    const Os = '#b85c3d'
-    const eyeC = busy || blink ? '▁' : '▪'
-    const claude = (
-      <Box flexDirection="column" alignItems="center">
-        <Text color={O}>{'  ▟████████▙  '}</Text>
-        <Text color={O}>
-          {busy ? '  ██' : bounce ? '▐▌██' : '▗▖██'}
-          <Text color={DARK} backgroundColor={O}>{eyeC}</Text>
-          {'████'}
-          <Text color={DARK} backgroundColor={O}>{eyeC}</Text>
-          {busy ? '██  ' : bounce ? '██▐▌' : '██▗▖'}
-        </Text>
-        <Text color={O}>
-          {busy ? (bounce ? '▐▌▜████████▛  ' : '  ▜████████▛▐▌') : '  ▜████████▛  '}
-        </Text>
-        {busy ? (
-          <Box flexDirection="column" alignItems="center">
-            <Text color="#8493aa">{' ▟██████████▙ '}</Text>
-            <Text color="#c0c8d6">{'▀▀▀▀▀▀▀▀▀▀▀▀▀▀'}</Text>
-          </Box>
+        {mode === 'type' ? (
+          <Text>
+            {odd ? <Text color={S}>▐▌</Text> : null}
+            <Text color={KEY}>▄▄▄▄▄▄▄▄</Text>
+            {odd ? null : <Text color={S}>▐▌</Text>}
+          </Text>
         ) : (
-          <Text color={Os}>{'  ▐▌ ▐▌▐▌ ▐▌  '}</Text>
+          <Text color={Ss}>{robotFeet}</Text>
         )}
       </Box>
     )
-    const sprite = kind === 'claude' ? claude : kind === 'robot' ? robot : kind === 'ghost' ? ghost : slime
-    const names: [Kind, string][] = [['claude', '小橘'], ['slime', '史萊姆'], ['robot', '機器人'], ['ghost', '幽靈']]
+
+    const sprite = robot
     // 用主題色鍵，會跟著深淺色主題自動調整
-    const tint = kind === 'claude' ? 'claude' : kind === 'robot' ? 'suggestion' : kind === 'ghost' ? 'permission' : 'success'
+    const tint = 'suggestion'
+    const caption = mode === 'type' ? '敲鍵盤回答中…' : mode === 'think' ? '嗯…我想想～' : '問我任何事～（我看得到主 session，但不會動它）'
 
     return (
       <Box flexDirection="column" gap={1}>
-        <Box>
-          {names.map(([k, label]) => (
-            <Box key={`k${k}`} marginRight={1}>
-              <Button
-                key={`pick-${k}`}
-                label={k === kind ? `● ${label}` : `○ ${label}`}
-                variant={k === kind ? 'primary' : 'secondary'}
-                onPress={async () => {
-                  await update($, kindAtom, () => k)
-                  await $.store.set('kind', k)
-                }}
-              />
-            </Box>
-          ))}
-        </Box>
         <Box flexDirection="column" alignItems="center">
-          {sprite}
-          <Text dimColor>{busy ? (kind === 'claude' ? '敲鍵盤中…' : '想一想…') : '問我任何事～（與主 session 無關）'}</Text>
+          <Box width={SPAN + 16}>
+            <Box marginLeft={pos}>
+              {sprite}
+              <Box marginLeft={1}>
+                <Text dimColor>{bubble}</Text>
+              </Box>
+            </Box>
+          </Box>
+          <Text dimColor>{caption}</Text>
         </Box>
         <Box flexDirection="column">
-          {msgs.slice(-12).map((m: Msg, i: number) => (
+          {msgs.slice(-30).map((m: Msg, i: number) => (
             <Box key={`m${i}`} flexDirection="column">
               <Text color={m.role === 'user' ? undefined : tint} wrap="wrap">
                 {m.role === 'user' ? '你：' : '娃：'}
@@ -218,8 +180,22 @@ export const register: Register = on => {
             </Box>
           ))}
         </Box>
-        <Input key={`ask${n}`} placeholder="問點什麼…（Enter 送出）" onSubmit={(v: string) => send(v)} autoFocus />
-        <Button key="close" label="[收起]" onPress={() => $.ui.close({ id: PANE })} />
+        <Input
+          key={`ask${n}`}
+          placeholder="問點什麼…（Enter 送出）"
+          onInput={async (v: string) => {
+            const t = await $.clock.now()
+            await update($, typingUntil, () => (v ? t + TYPING_MS : 0))
+          }}
+          onSubmit={(v: string) => send(v)}
+          autoFocus
+        />
+        <Box>
+          <Box marginRight={2}>
+            <Button key="close" label="[收起]" onPress={() => $.ui.close({ id: PANE })} />
+          </Box>
+          <Button key="clear" label="[清空對話]" onPress={() => update($, chat, () => [])} />
+        </Box>
       </Box>
     )
   })
